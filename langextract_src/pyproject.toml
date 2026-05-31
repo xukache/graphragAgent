@@ -44,7 +44,10 @@ dependencies = [
     "regex>=2023.0.0",
     "requests>=2.25.0",
     "tqdm>=4.64.0",
-    "typing-extensions>=4.0.0"
+    "typing-extensions>=4.0.0",
+    "fastapi>=0.136.3",
+    "uvicorn>=0.48.0",
+    "python-multipart>=0.0.29",
 ]
 
 [project.urls]

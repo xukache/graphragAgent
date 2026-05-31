@@ -1,0 +1,14 @@
+[project]
+name = "mineru-mvp"
+version = "0.1.0"
+description = "MinerU 精准解析 API（路径 B）MVP 测试 pipeline"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "reportlab>=4.0.0",
+]
+
+[tool.uv]
+# 声明为非包项目（纯脚本），uv sync 时不尝试构建/安装项目本身
+package = false

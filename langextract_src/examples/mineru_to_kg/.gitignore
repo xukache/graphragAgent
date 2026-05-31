@@ -1,0 +1,9 @@
+# 敏感配置（如有本地副本）
+.env
+
+# 抽取输出
+output/
+
+# Python
+__pycache__/
+*.pyc

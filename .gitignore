@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# 测试用大文件（不入库）
+2501.00309v2.pdf
+2501.00309v2_5pages.pdf
+
+# IDE
+.vscode/
+.idea/
+
+# Kiro skills 是机器/用户级安装，不入项目库；project-specific 的 settings/ 与 steering/ 仍提交
+.kiro/skills/
+
+# 各组件已有 .env / .venv / output 的本地 .gitignore，此处仅保留通用项

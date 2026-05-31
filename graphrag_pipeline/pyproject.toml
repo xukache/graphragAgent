@@ -1,0 +1,18 @@
+[project]
+name = "graphrag-pipeline"
+version = "0.1.0"
+description = "Agentic RAG over Bridge Pipeline KG output (LangChain + LangGraph)"
+requires-python = ">=3.11"
+dependencies = [
+    "python-dotenv>=1.0.0",
+    "langchain>=0.3",
+    "langchain-core>=0.3",
+    "langchain-openai>=0.2",
+    "langgraph>=0.2",
+    "pydantic>=2",
+    "fastapi>=0.110",
+    "uvicorn>=0.30",
+]
+
+[tool.uv]
+package = false

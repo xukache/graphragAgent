@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GraphRAG Bridge Pipeline</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+:root {
+  --bg: oklch(0.14 0.008 260);
+  --surface: oklch(0.18 0.01 260);
+  --surface-hover: oklch(0.22 0.012 260);
+  --border: oklch(0.28 0.01 260);
+  --text: oklch(0.92 0.005 260);
+  --text-dim: oklch(0.6 0.008 260);
+  --accent: oklch(0.7 0.18 200);
+  --accent-dim: oklch(0.5 0.12 200);
+  --success: oklch(0.7 0.16 155);
+  --warning: oklch(0.75 0.14 80);
+  --error: oklch(0.65 0.2 25);
+  --radius: 8px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+header h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+header p {
+  color: var(--text-dim);
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+/* Upload zone */
+.upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 3rem 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  background: var(--surface);
+}
+
+.upload-zone:hover, .upload-zone.dragover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.upload-zone svg {
+  width: 48px;
+  height: 48px;
+  stroke: var(--text-dim);
+  margin-bottom: 1rem;
+}
+
+.upload-zone p {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.upload-zone .hint {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-top: 0.5rem;
+  opacity: 0.7;
+}
+
+/* Progress */
+.progress-section {
+  display: none;
+  margin-top: 2rem;
+}
+
+.progress-bar-container {
+  background: var(--surface);
+  border-radius: 4px;
+  height: 6px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.progress-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width 0.4s ease-out;
+  width: 0%;
+}
+
+.progress-status {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.progress-status .step {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* Results */
+.results-section {
+  display: none;
+  margin-top: 2rem;
+}
+
+.results-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 900px) {
+  .results-grid { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.panel-header {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.panel-body {
+  padding: 1rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.panel-body::-webkit-scrollbar { width: 4px; }
+.panel-body::-webkit-scrollbar-track { background: transparent; }
+.panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* Extraction items */
+.extraction-item {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid oklch(0.22 0.008 260);
+  font-size: 0.82rem;
+}
+
+.extraction-item:last-child { border-bottom: none; }
+
+.extraction-class {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-right: 0.5rem;
+}
+
+.class-person { background: oklch(0.3 0.08 340); color: oklch(0.85 0.1 340); }
+.class-organization { background: oklch(0.3 0.08 200); color: oklch(0.85 0.1 200); }
+.class-metric { background: oklch(0.3 0.08 155); color: oklch(0.85 0.1 155); }
+.class-disease { background: oklch(0.3 0.08 25); color: oklch(0.85 0.1 25); }
+.class-drug { background: oklch(0.3 0.08 80); color: oklch(0.85 0.1 80); }
+.class-duration { background: oklch(0.3 0.08 260); color: oklch(0.85 0.1 260); }
+.class-publication { background: oklch(0.3 0.08 300); color: oklch(0.85 0.1 300); }
+.class-cohort { background: oklch(0.3 0.08 120); color: oklch(0.85 0.1 120); }
+.class-relationship { background: oklch(0.3 0.06 0); color: oklch(0.85 0.06 0); }
+
+.extraction-text {
+  color: var(--text);
+}
+
+.extraction-attrs {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  margin-top: 0.15rem;
+}
+
+/* Stats */
+.stats-row {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  min-width: 120px;
+}
+
+.stat-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-top: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Graph */
+.graph-container {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  position: relative;
+}
+
+.graph-container svg {
+  width: 100%;
+  height: 500px;
+  display: block;
+}
+
+.graph-container .graph-header {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+/* D3 graph styles */
+.node circle {
+  stroke-width: 2px;
+  cursor: pointer;
+}
+
+.node text {
+  font-size: 10px;
+  fill: var(--text);
+  pointer-events: none;
+}
+
+.link {
+  stroke: var(--border);
+  stroke-opacity: 0.6;
+  fill: none;
+}
+
+.link-label {
+  font-size: 8px;
+  fill: var(--text-dim);
+}
+
+/* Tooltip */
+.tooltip {
+  position: absolute;
+  background: oklch(0.12 0.01 260);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.75rem;
+  color: var(--text);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  max-width: 280px;
+  z-index: 100;
+}
+
+/* Error */
+.error-msg {
+  background: oklch(0.2 0.06 25);
+  border: 1px solid oklch(0.35 0.1 25);
+  border-radius: var(--radius);
+  padding: 1rem;
+  color: oklch(0.85 0.08 25);
+  font-size: 0.85rem;
+  margin-top: 1rem;
+  display: none;
+}
+
+/* Reset button */
+.reset-btn {
+  display: inline-block;
+  margin-top: 1.5rem;
+  padding: 0.5rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.reset-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>GraphRAG Bridge Pipeline</h1>
+    <p>PDF → 文档解析 → 信息抽取 → 知识图谱</p>
+  </header>
+
+  <!-- Upload -->
+  <div class="upload-zone" id="uploadZone">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="17 8 12 3 7 8"/>
+      <line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+    <p>拖拽 PDF 文件到此处，或点击选择</p>
+    <p class="hint">支持 PDF / Word / PPT / Excel / 图片，≤200MB</p>
+    <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.bmp,.webp" hidden>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-section" id="progressSection">
+    <div class="progress-bar-container">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <p class="progress-status" id="progressStatus">
+      <span class="step">准备中</span> — 正在初始化...
+    </p>
+  </div>
+
+  <!-- Error -->
+  <div class="error-msg" id="errorMsg"></div>
+
+  <!-- Results -->
+  <div class="results-section" id="resultsSection">
+    <div class="stats-row" id="statsRow"></div>
+
+    <div class="results-grid">
+      <div class="panel">
+        <div class="panel-header">信息抽取结果</div>
+        <div class="panel-body" id="extractionsList"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">实体节点</div>
+        <div class="panel-body" id="entitiesList"></div>
+      </div>
+    </div>
+
+    <div class="graph-container">
+      <div class="graph-header">知识图谱可视化</div>
+      <svg id="graphSvg"></svg>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+
+    <button class="reset-btn" id="resetBtn">重新上传</button>
+  </div>
+</div>
+
+<script>
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+const progressSection = document.getElementById('progressSection');
+const progressBar = document.getElementById('progressBar');
+const progressStatus = document.getElementById('progressStatus');
+const errorMsg = document.getElementById('errorMsg');
+const resultsSection = document.getElementById('resultsSection');
+const resetBtn = document.getElementById('resetBtn');
+
+// Upload interactions
+uploadZone.addEventListener('click', () => fileInput.click());
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+resetBtn.addEventListener('click', resetUI);
+
+function setProgress(pct, step, detail) {
+  progressBar.style.width = pct + '%';
+  progressStatus.innerHTML = `<span class="step">${step}</span> — ${detail}`;
+}
+
+function showError(msg) {
+  errorMsg.textContent = msg;
+  errorMsg.style.display = 'block';
+}
+
+function resetUI() {
+  uploadZone.style.display = '';
+  progressSection.style.display = 'none';
+  resultsSection.style.display = 'none';
+  errorMsg.style.display = 'none';
+  progressBar.style.width = '0%';
+  fileInput.value = '';
+}
+
+async function handleFile(file) {
+  uploadZone.style.display = 'none';
+  progressSection.style.display = 'block';
+  errorMsg.style.display = 'none';
+  resultsSection.style.display = 'none';
+
+  setProgress(5, '上传中', `正在上传 ${file.name}...`);
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    setProgress(15, 'MinerU 解析', '文档已上传，正在云端解析...');
+
+    const resp = await fetch('/api/parse', { method: 'POST', body: formData });
+    const data = await resp.json();
+
+    if (!data.success) {
+      showError(data.error || '解析失败');
+      progressSection.style.display = 'none';
+      uploadZone.style.display = '';
+      return;
+    }
+
+    setProgress(100, '完成', `抽取 ${data.extractions_count} 条，构建知识图谱完成`);
+
+    setTimeout(() => {
+      progressSection.style.display = 'none';
+      renderResults(data);
+    }, 600);
+
+  } catch (err) {
+    showError(`请求失败: ${err.message}`);
+    progressSection.style.display = 'none';
+    uploadZone.style.display = '';
+  }
+}
+
+function renderResults(data) {
+  resultsSection.style.display = 'block';
+  const kg = data.knowledge_graph;
+
+  // Stats
+  const statsRow = document.getElementById('statsRow');
+  statsRow.innerHTML = `
+    <div class="stat-card"><div class="stat-value">${data.blocks_count}</div><div class="stat-label">文档块</div></div>
+    <div class="stat-card"><div class="stat-value">${data.extractions_count}</div><div class="stat-label">抽取条目</div></div>
+    <div class="stat-card"><div class="stat-value">${kg.stats.entity_count}</div><div class="stat-label">实体节点</div></div>
+    <div class="stat-card"><div class="stat-value">${kg.stats.triple_count}</div><div class="stat-label">三元组</div></div>
+  `;
+
+  // Extractions list
+  const el = document.getElementById('extractionsList');
+  el.innerHTML = data.extractions.map(ex => {
+    const cls = ex.extraction_class;
+    const attrs = ex.attributes ? Object.entries(ex.attributes).map(([k,v]) => `${k}=${v}`).join(', ') : '';
+    return `<div class="extraction-item">
+      <span class="extraction-class class-${cls}">${cls}</span>
+      <span class="extraction-text">${ex.extraction_text}</span>
+      ${attrs ? `<div class="extraction-attrs">${attrs}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  // Entities list
+  const entEl = document.getElementById('entitiesList');
+  entEl.innerHTML = kg.entities.map(ent => {
+    const props = Object.entries(ent.properties || {}).slice(0, 4).map(([k,v]) => `${k}=${v}`).join(', ');
+    return `<div class="extraction-item">
+      <span class="extraction-class class-${ent.entity_class}">${ent.entity_class}</span>
+      <span class="extraction-text">${ent.label}</span>
+      ${props ? `<div class="extraction-attrs">${props}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  // Knowledge Graph visualization
+  renderGraph(kg);
+}
+
+// D3 Force Graph
+function renderGraph(kg) {
+  const svg = d3.select('#graphSvg');
+  svg.selectAll('*').remove();
+  const width = svg.node().clientWidth || 800;
+  const height = 500;
+  svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+  // Build nodes and links from KG
+  const nodeMap = new Map();
+  kg.entities.forEach(ent => {
+    nodeMap.set(ent.entity_id, { id: ent.entity_id, label: ent.label, class: ent.entity_class, properties: ent.properties });
+  });
+
+  // Add virtual group nodes for metric triples
+  kg.triples.forEach(t => {
+    if (typeof t.subject === 'string' && t.subject.startsWith('_group_') && !nodeMap.has(t.subject)) {
+      const label = t.metadata?.group_label || t.subject.replace('_group_', '');
+      nodeMap.set(t.subject, { id: t.subject, label: label, class: 'group', properties: {} });
+    }
+  });
+
+  const nodes = Array.from(nodeMap.values());
+  const links = [];
+  kg.triples.forEach(t => {
+    if (typeof t.object === 'string' && nodeMap.has(t.subject) && nodeMap.has(t.object)) {
+      links.push({ source: t.subject, target: t.object, predicate: t.predicate });
+    } else if (typeof t.object === 'object' && t.object?.metric_id && nodeMap.has(t.subject)) {
+      // metric group → metric entity
+      if (nodeMap.has(t.object.metric_id)) {
+        links.push({ source: t.subject, target: t.object.metric_id, predicate: t.predicate });
+      }
+    }
+  });
+
+  if (nodes.length === 0) return;
+
+  const colorScale = {
+    person: 'oklch(0.7 0.18 340)',
+    organization: 'oklch(0.7 0.18 200)',
+    metric: 'oklch(0.7 0.16 155)',
+    disease: 'oklch(0.7 0.18 25)',
+    drug: 'oklch(0.7 0.16 80)',
+    duration: 'oklch(0.65 0.14 260)',
+    publication: 'oklch(0.7 0.16 300)',
+    cohort: 'oklch(0.7 0.14 120)',
+    group: 'oklch(0.55 0.08 200)',
+  };
+
+  const simulation = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.id).distance(80))
+    .force('charge', d3.forceManyBody().strength(-200))
+    .force('center', d3.forceCenter(width / 2, height / 2))
+    .force('collision', d3.forceCollide(30));
+
+  const g = svg.append('g');
+
+  // Zoom
+  svg.call(d3.zoom().scaleExtent([0.3, 4]).on('zoom', e => g.attr('transform', e.transform)));
+
+  // Links
+  const link = g.selectAll('.link')
+    .data(links).enter().append('line')
+    .attr('class', 'link')
+    .attr('stroke-width', 1.5);
+
+  // Link labels
+  const linkLabel = g.selectAll('.link-label')
+    .data(links).enter().append('text')
+    .attr('class', 'link-label')
+    .text(d => d.predicate.length > 12 ? d.predicate.slice(0, 12) + '…' : d.predicate);
+
+  // Nodes
+  const node = g.selectAll('.node')
+    .data(nodes).enter().append('g')
+    .attr('class', 'node')
+    .call(d3.drag()
+      .on('start', (e, d) => { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+      .on('end', (e, d) => { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; })
+    );
+
+  node.append('circle')
+    .attr('r', d => d.class === 'group' ? 8 : 12)
+    .attr('fill', d => colorScale[d.class] || 'oklch(0.6 0.1 260)')
+    .attr('stroke', 'oklch(0.3 0.01 260)')
+    .attr('stroke-width', 2);
+
+  node.append('text')
+    .attr('dy', -16)
+    .attr('text-anchor', 'middle')
+    .text(d => d.label.length > 10 ? d.label.slice(0, 10) + '…' : d.label);
+
+  // Tooltip
+  const tooltip = document.getElementById('tooltip');
+  node.on('mouseenter', (e, d) => {
+    const props = Object.entries(d.properties || {}).map(([k,v]) => `<b>${k}</b>: ${v}`).join('<br>');
+    tooltip.innerHTML = `<b>${d.label}</b><br><small>${d.class}</small>${props ? '<br>' + props : ''}`;
+    tooltip.style.opacity = 1;
+  }).on('mousemove', e => {
+    const rect = document.querySelector('.graph-container').getBoundingClientRect();
+    tooltip.style.left = (e.clientX - rect.left + 12) + 'px';
+    tooltip.style.top = (e.clientY - rect.top - 10) + 'px';
+  }).on('mouseleave', () => { tooltip.style.opacity = 0; });
+
+  simulation.on('tick', () => {
+    link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    linkLabel.attr('x', d => (d.source.x + d.target.x) / 2)
+             .attr('y', d => (d.source.y + d.target.y) / 2);
+    node.attr('transform', d => `translate(${d.x},${d.y})`);
+  });
+}
+</script>
+</body>
+</html>
