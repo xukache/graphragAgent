@@ -210,14 +210,22 @@ def test_pages_no_mineru():
 
 
 def test_pages_with_mineru():
-    """手写一个 3 块 / 2 页的 content_list.json，验证拼接逻辑。"""
+    """手写一个 3 块 / 2 页的 content_list.json，验证拼接逻辑。
+
+    模拟 mineru pipeline：写 task_meta.json + source 目录，page_id 前缀
+    从 meta.file_name 读取（默认 "source.pdf"）。
+    """
     pdf_bytes = b"%PDF-1.4 pages real"
     files = {"file": ("real_pages.pdf", io.BytesIO(pdf_bytes), "application/pdf")}
     up = httpx.post(f"{BASE}/api/documents", files=files).json()
     doc_id = up["document_id"]
 
-    cl_path = DOCS_DIR / doc_id / "mineru" / "test_real_pages_content_list.json"
-    cl_path.parent.mkdir(parents=True, exist_ok=True)
+    mineru = DOCS_DIR / doc_id / "mineru"
+    mineru.mkdir(parents=True, exist_ok=True)
+    (mineru / "task_meta.json").write_text(
+        json.dumps({"file_name": "source.pdf", "state": "done"}), encoding="utf-8"
+    )
+    cl_path = mineru / "test_real_pages_content_list.json"
     cl_path.write_text(json.dumps([
         {"type": "text", "text": "First page A.", "page_idx": 0},
         {"type": "text", "text": "First page B.", "page_idx": 0},
@@ -230,8 +238,9 @@ def test_pages_with_mineru():
     assert r.status_code == 200
     data = r.json()
 
-    page0_id = f"{doc_id}_page_0"
-    page1_id = f"{doc_id}_page_1"
+    # page_id 格式：{file_name}_page_{idx}
+    page0_id = "source.pdf_page_0"
+    page1_id = "source.pdf_page_1"
     assert page0_id in data["pages"], f"missing {page0_id} in {list(data['pages'].keys())}"
     assert page1_id in data["pages"]
     assert "First page A." in data["pages"][page0_id]
@@ -247,8 +256,12 @@ def test_pages_table_block():
     up = httpx.post(f"{BASE}/api/documents", files=files).json()
     doc_id = up["document_id"]
 
-    cl_path = DOCS_DIR / doc_id / "mineru" / "test_table_content_list.json"
-    cl_path.parent.mkdir(parents=True, exist_ok=True)
+    mineru = DOCS_DIR / doc_id / "mineru"
+    mineru.mkdir(parents=True, exist_ok=True)
+    (mineru / "task_meta.json").write_text(
+        json.dumps({"file_name": "source.pdf", "state": "done"}), encoding="utf-8"
+    )
+    cl_path = mineru / "test_table_content_list.json"
     cl_path.write_text(json.dumps([
         {
             "type": "table",
@@ -260,7 +273,7 @@ def test_pages_table_block():
     r = httpx.get(f"{BASE}/api/documents/{doc_id}/pages")
     assert r.status_code == 200
     data = r.json()
-    page_id = f"{doc_id}_page_0"
+    page_id = "source.pdf_page_0"
     text = data["pages"][page_id]
     assert "Cell 1" in text
     assert "Cell 2" in text

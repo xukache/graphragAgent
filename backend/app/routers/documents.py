@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from app.config import DOCUMENTS_DIR
 from app.store.db import get_conn
 from app.store.files import (
-    ensure_doc_dirs, source_path, kg_json_path, delete_doc_dir, content_list_path,
+    ensure_doc_dirs, source_path, kg_json_path, delete_doc_dir, content_list_path, page_id_prefix,
 )
 from app.schemas.document import (
     DocumentOut, DocumentListOut, UploadOut, KGStats, TaskSummary, DocumentPagesOut,
@@ -187,10 +187,11 @@ _HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 @router.get("/{document_id}/pages", response_model=DocumentPagesOut)
 def get_document_pages(document_id: str):
-    """返回按 page_idx 分组的纯文本，page_id 格式：{document_id}_page_{idx}。
+    """返回按 page_idx 分组的纯文本，page_id 格式：{prefix}_page_{idx}。
 
-    - 文档不存在 → 404
-    - mineru 产物缺失或解析失败 → 200 + `{"pages": {}}`（不报错，便于前端降级）
+    prefix 来自 task_meta.json 的 file_name（与 langextract converter
+    生成 KG sources[].document_id 的约定保持一致，通常为 "source.pdf"）。
+    文档不存在 → 404；mineru 产物缺失或解析失败 → 200 + `{"pages": {}}`。
     """
     conn = get_conn()
     row = conn.execute("SELECT document_id FROM documents WHERE document_id=?", (document_id,)).fetchone()
@@ -206,6 +207,8 @@ def get_document_pages(document_id: str):
         blocks = json.loads(cl_path.read_text(encoding="utf-8"))
     except Exception:
         return DocumentPagesOut(pages={})
+
+    prefix = page_id_prefix(document_id)
 
     grouped: dict[int, list[str]] = {}
     for block in blocks:
@@ -226,7 +229,7 @@ def get_document_pages(document_id: str):
         grouped.setdefault(page_idx, []).append(text)
 
     return DocumentPagesOut(pages={
-        f"{document_id}_page_{idx}": "\n\n".join(chunks)
+        f"{prefix}_page_{idx}": "\n\n".join(chunks)
         for idx, chunks in sorted(grouped.items())
     })
 

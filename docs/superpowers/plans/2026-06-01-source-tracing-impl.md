@@ -89,7 +89,7 @@ class DocumentPagesOut(BaseModel):
    - `type == "text"` → 取 `text` 字段，`"\n"` 分隔
    - `type == "table"` → 取 `table_body`，用正则 `re.sub(r"<[^>]+>", "", html)` 去 HTML 标签，`"\n"` 分隔
    - 其他类型（image / equation / …）→ 跳过
-5. page_id 格式：`f"{document_id}_page_{page_idx}"`（用文档 UUID + 页码，与设计 §2.1 示例的 "source.pdf_page_0" 格式不同，按用户确认改用 document_id）
+5. page_id 格式：`f"{prefix}_page_{page_idx}"`，其中 `prefix` 来自 mineru 的 `task_meta.json.file_name`（如 `source.pdf`）。这与 langextract converter 生成 KG `sources[].document_id` 的约定保持一致，前端才能用 `entity.documentId` 查到对应页文本。**实现期发现**：用户原意"document_id_page_{idx}"中的"document_id"在 KG 端实际指向源文件名（不是后端 UUID），所以最终用源文件名以保证集成可工作。
 6. 排序：按 `page_idx` 升序
 
 **依赖**：无
