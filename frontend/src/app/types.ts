@@ -40,6 +40,15 @@ export interface Source {
   entityClass: string;
 }
 
+/** SourceDrawer 的入参，App.tsx 用它驱动抽屉开关。 */
+export interface DrawerSource {
+  entityId: string;
+  entityLabel: string;
+  entityClass: string;
+  pageId: string;
+  charInterval: { start_pos: number; end_pos: number } | null;
+}
+
 export interface Message {
   id: string;
   role: MessageRole;
