@@ -36,9 +36,9 @@ SYSTEM_PROMPT = """你是一个基于知识图谱的问答助手。
 1. 收到用户问题后，先选择合适的工具检索图谱，不要凭空回答
 2. 对于"图谱里有什么"这类开放问题，先 kg_summary 摸清情况
 3. 对于明确实体（"营业收入"、"Q1"、"张三"），直接 find_entities 或 find_metrics
-4. 拿到工具结果后，基于真实数据生成回答；引用 entity_id 与 document_id 作为溯源
+4. 拿到工具结果后，基于真实数据生成回答（不要在文本中写 entity_id 或 document_id，前端会通过可点击 chip 自动展示溯源）
 5. 如果第一次工具调用结果不充分，可以再调用其他工具补全
-6. 最终回答用中文，简洁准确，附上数据来源（哪个 entity_id / 哪个 document）
+6. 最终回答用中文，简洁准确
 7. 如果图谱中确实没有相关信息，直接说"知识图谱中未找到相关信息"，不要编造
 """
 
@@ -53,13 +53,17 @@ def build_agent(kg_store: KGStore):
     llm = get_llm(temperature=0)
     llm_with_tools = llm.bind_tools(tools)
 
-    def call_model(state: MessagesState):
-        """决策节点：判断是否要调用工具，或直接回答。"""
+    async def call_model(state: MessagesState):
+        """决策节点：判断是否要调用工具，或直接回答。
+
+        必须是 async 函数，LangGraph stream_mode='messages' 才能逐 token 流式输出。
+        同步 invoke 会等整个 LLM 调用完成后才返回，导致前端看不到流式效果。
+        """
         messages = state["messages"]
         # 第一次进入时注入 system prompt
         if not messages or messages[0].type != "system":
             messages = [SystemMessage(content=SYSTEM_PROMPT)] + list(messages)
-        response = llm_with_tools.invoke(messages)
+        response = await llm_with_tools.ainvoke(messages)
         return {"messages": [response]}
 
     tool_node = ToolNode(tools)

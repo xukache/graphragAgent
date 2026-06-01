@@ -267,7 +267,7 @@ function MessageBubble({ msg, onRetry, onSourceClick }: { msg: Message; onRetry?
         {msg.sources && msg.sources.length > 0 && !msg.isStreaming && (
           <div
             style={{
-              marginTop: 5,
+              marginTop: 6,
               display: 'flex',
               flexDirection: 'column',
               gap: 3,
@@ -278,17 +278,26 @@ function MessageBubble({ msg, onRetry, onSourceClick }: { msg: Message; onRetry?
                 key={i}
                 onClick={() => onSourceClick?.(src)}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'oklch(0.22 0.01 260)';
+                  e.currentTarget.style.background = 'oklch(0.22 0.04 200 / 0.45)';
+                  e.currentTarget.style.borderLeftColor = 'oklch(0.65 0.18 200)';
+                  e.currentTarget.style.paddingLeft = '10px';
+                  const hint = e.currentTarget.querySelector('[data-hint]') as HTMLElement | null;
+                  if (hint) hint.style.opacity = '1';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = 'oklch(0.16 0.01 260)';
+                  e.currentTarget.style.borderLeftColor = 'oklch(0.65 0.18 200 / 0.5)';
+                  e.currentTarget.style.paddingLeft = '8px';
+                  const hint = e.currentTarget.querySelector('[data-hint]') as HTMLElement | null;
+                  if (hint) hint.style.opacity = '0';
                 }}
+                title="点击查看原文片段 + 节点高亮"
                 style={{
                   background: 'oklch(0.16 0.01 260)',
                   border: 'none',
                   borderLeft: '2px solid oklch(0.65 0.18 200 / 0.5)',
                   borderRadius: '0 4px 4px 0',
-                  padding: '4px 8px',
+                  padding: '5px 8px',
                   fontSize: 10,
                   color: 'oklch(0.55 0.008 260)',
                   fontFamily: 'SF Mono, Cascadia Code, monospace',
@@ -297,7 +306,7 @@ function MessageBubble({ msg, onRetry, onSourceClick }: { msg: Message; onRetry?
                   display: 'flex',
                   alignItems: 'center',
                   gap: 5,
-                  transition: 'background 120ms',
+                  transition: 'background 120ms, border-color 120ms, padding 120ms',
                 }}
               >
                 <Hexagon
@@ -310,6 +319,19 @@ function MessageBubble({ msg, onRetry, onSourceClick }: { msg: Message; onRetry?
                 <span style={{ color: 'oklch(0.42 0.008 260)' }}>{src.entityClass}</span>
                 <span style={{ color: 'oklch(0.32 0.008 260)' }}>·</span>
                 <span style={{ color: 'oklch(0.42 0.008 260)' }}>{src.location}</span>
+                <span
+                  data-hint
+                  style={{
+                    marginLeft: 'auto',
+                    color: 'oklch(0.65 0.18 200)',
+                    opacity: 0,
+                    transition: 'opacity 120ms',
+                    fontSize: 9,
+                    flexShrink: 0,
+                  }}
+                >
+                  点击查看 →
+                </span>
               </button>
             ))}
           </div>
