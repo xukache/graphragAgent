@@ -6,7 +6,8 @@ import { IndexProgress } from './components/IndexProgress';
 import type { IndexProgressProps, StageState as StageStateType } from './components/IndexProgress';
 import { KGPanel } from './components/KGPanel';
 import { UploadOverlay } from './components/UploadOverlay';
-import { Document, Session, Message, KGData, Source, DrawerSource } from './types';
+import { SourceDrawer } from './components/SourceDrawer';
+import { Document, Session, Message, KGData, KGNode, Source, DrawerSource } from './types';
 import {
   listDocuments,
   uploadDocument,
@@ -494,9 +495,8 @@ export default function App() {
             },
             onComplete: ({ messageId, answer, toolCalls, latencyMs, entityIds }) => {
               // 把 entity_ids 展开为 Message.sources：每个 entity 的 sources[] 拍平
-              const nodeMap = new Map(
-                (currentKg?.nodes ?? []).map((n) => [n.id, n])
-              );
+              const nodes: KGNode[] = currentKg?.nodes ?? [];
+              const nodeMap = new Map<string, KGNode>(nodes.map((n) => [n.id, n]));
               const sources: Source[] = (entityIds ?? []).flatMap((eid) => {
                 const node = nodeMap.get(eid);
                 if (!node) return [];
@@ -588,6 +588,24 @@ export default function App() {
     handleSendMessage(lastUser.content);
   }, [activeSessionId, messagesBySession, handleSendMessage]);
 
+  /* ---------- 来源 chip 点击：高亮 + 抽屉 ---------- */
+  const handleSourceClick = useCallback((src: Source) => {
+    setHighlightedIds((prev) => {
+      const next = prev.includes(src.entityId) ? prev : [...prev, src.entityId];
+      return next;
+    });
+    setTimeout(() => {
+      setHighlightedIds((prev) => prev.filter((id) => id !== src.entityId));
+    }, 4000);
+    setDrawerSource({
+      entityId: src.entityId,
+      entityLabel: src.entityLabel,
+      entityClass: src.entityClass,
+      pageId: src.location,           // location 由 T6 写入为 page_id
+      charInterval: src.charInterval,
+    });
+  }, []);
+
   const showIndexProgress =
     selectedDoc && shouldShowIndexProgress(selectedDoc.status);
 
@@ -661,6 +679,7 @@ export default function App() {
             minWidth: 400,
             overflow: 'hidden',
             background: 'oklch(0.12 0.008 260)',
+            position: 'relative',
           }}
         >
           {indexProgressProps ? (
@@ -677,6 +696,19 @@ export default function App() {
               onSelectSession={(id) => { setActiveSessionId(id); setFocusEntityIds([]); }}
               onDeleteSession={handleDeleteSession}
               onRetry={handleRetry}
+              onSourceClick={handleSourceClick}
+            />
+          )}
+          {selectedDocId && (
+            <SourceDrawer
+              source={drawerSource}
+              pageText={
+                drawerSource
+                  ? pageTextByDoc[selectedDocId]?.[drawerSource.pageId] ?? ''
+                  : ''
+              }
+              documentName={selectedDoc?.name ?? ''}
+              onClose={() => setDrawerSource(null)}
             />
           )}
         </div>
