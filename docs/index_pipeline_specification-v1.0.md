@@ -15,7 +15,7 @@
 | --- | --- | --- |
 | MinerU 后端 | `_backend=hybrid`，`_version_name=3.1.8` | `mineru_mvp/output/layout.json` |
 | LangExtract 版本 | 1.5.0 | `langextract_src/pyproject.toml` |
-| LLM | 阿里千问 `qwen3.7-max`（OpenAI-compatible） | `examples/qwen_mvp/.env` |
+| LLM | 阿里千问 `qwen3.6-flash`（OpenAI-compatible，默认）| `examples/qwen_mvp/.env` |
 | 测试输入 | `mineru_mvp/sample.pdf`（1 页，含中文标题/正文/4 列 5 行数值表格/公式行） | 本地生成 |
 | 实测产出 | 17 实体 / 34 三元组（重试 1 次后稳定） | `examples/mineru_to_kg/output/` |
 
@@ -278,7 +278,8 @@ AnnotatedDocument(
 )
 
 Extraction(
-    extraction_class: str,            # 9 类：person/organization/disease/drug/metric/cohort/duration/publication/relationship
+    extraction_class: str,            # **开放 schema**（v2）：LLM 根据文档内容决定 3-8 个适合的类
+                                       # 旧版（v1）：9 类硬编码 person/organization/disease/drug/metric/cohort/duration/publication/relationship
     extraction_text: str,
     char_interval: dict | None,       # {"start_pos": int, "end_pos": int}
     alignment_status: str | None,     # "match_exact" / "match_fuzzy" / "match_lesser" / null
@@ -289,14 +290,19 @@ Extraction(
 )
 ```
 
-**`extraction_class` 与 attributes 体系（本 Bridge 定义，由 prompts.py 强约束）**：
+**`extraction_class` 体系（v2 开放 schema）**：
 
-| extraction_class | attributes 字段 |
-| --- | --- |
-| `person` | `role`, `title`, `affiliation` |
-| `organization` | `type`, `department`, `parent` |
-| `disease` | `category` |
-| `drug` | `dosage`, `unit`, `frequency`, `indication`, `group` |
+> 设计依据：`docs/superpowers/plans/2026-06-01-langextract-quality-impl.md`
+>
+> 不再硬编码 9 类。LLM 阅读文档后自己决定 3-8 个适合本文的 entity class（中英文名皆可）。例如：
+>
+> | 文档类型 | LLM 自定 class 示例 |
+> |---|---|
+> | 财报 | `company / period / metric` |
+> | 学术论文 | `author / institution / method / concept / reference` |
+> | 临床医学 | `drug / disease / cohort / duration` |
+>
+> 引用编号（如 `[87, 120]`）在 KG 构建阶段由 `kg_builder._relabel_citations()` 自动归为 `reference` 类。
 | `metric` | `metric_type`, `metric_name`, `value`, `unit`, `direction`, `group` |
 | `cohort` | `size`, `unit`, `age_criteria`, `condition` |
 | `duration` | `value`, `unit`, `type` |
@@ -408,7 +414,7 @@ Extraction(
 | --- | --- | --- |
 | `text_or_documents` | `list[Document]`（按页分） | 多文档批处理传 list；单段传 str |
 | `prompt_description` | 见 `prompts.py PROMPT` | 越具体抽取越准；列出每个 class 的 attributes 字段 |
-| `examples` | 1 个 ExampleData，含 12 个示范 extraction | **≥1 个，硬约束**；越贴近真实场景效果越好 |
+| `examples` | 3 个 ExampleData（财务/学术/医学），共 21 个示范 extraction | **≥1 个，硬约束**；v2 扩到 3 个跨领域 example，让 LLM 学到开放 schema + substring 约束 |
 | `config` | `ModelConfig(provider="OpenAILanguageModel", ...)` | OpenAI-compatible 端点必须显式指定 provider |
 | `use_schema_constraints` | **`False`** | 第三方端点必须关闭；Gemini 原生时可开启 |
 | `fence_output` | **`True`** | 第三方端点必须开启，让模型用 ` ```json ``` ` 包裹 |
@@ -492,7 +498,7 @@ for attempt in range(1, max_attempts + 1):
 | 字段 | 实测类型 | 说明 |
 | --- | --- | --- |
 | `entity_id` | string | `e_<sha1[:8]>`，全局唯一 |
-| `entity_class` | string | 9 类之一（不含 relationship） |
+| `entity_class` | string | **v2 开放 schema**：LLM 自定 3-8 个适合本文的类 + 内部 `reference`（citation bracket 归类）|
 | `label` | string | 规范化显示名（metric 用 `metric_name（group）` 格式） |
 | `aliases` | list[string] | 同义别名（如不同写法的同一实体） |
 | `properties` | dict | 来自 `extraction.attributes` 的字段并集 |

@@ -69,11 +69,18 @@ class Triple:
 # 实体归一化
 # --------------------------------------------------------------------------- #
 _NORMALIZE_RE = re.compile(r"\s+")
+# 引用括号，如 [87, 120, 514, 551] / [120] / [277, 527]
+_CITATION_BRACKET_RE = re.compile(r"^\s*\[[\d\s,]+\]\s*$")
 
 
 def _norm_text(text: str) -> str:
     """文本归一化：去除首尾空白、压缩内部空白、保留原始大小写与中文。"""
     return _NORMALIZE_RE.sub(" ", (text or "").strip())
+
+
+def _is_citation_bracket(label: str) -> bool:
+    """判断 label 是否是引用编号（如 [87, 120]）。"""
+    return bool(_CITATION_BRACKET_RE.match(label or ""))
 
 
 def _entity_signature(entity_class: str, label: str, attrs: dict) -> str:
@@ -196,6 +203,87 @@ ATTR_TO_PREDICATE: dict[tuple[str, str], str] = {
 }
 
 
+# --------------------------------------------------------------------------- #
+# 受控 predicate 词表 + 归一化映射
+# --------------------------------------------------------------------------- #
+# 设计依据：docs/superpowers/plans/2026-06-01-langextract-quality-impl.md
+# 抽取 prompt 强制 LLM 从下表中选词；不在表内的通过 PREDICATE_ALIASES 归一化。
+CONTROLLED_PREDICATES: set[str] = {
+    # 抽取 prompt 强制词表（10 个）
+    "mentions", "discusses", "proposes", "extends", "evaluates", "uses",
+    "affiliated_with", "published_in", "part_of", "cites",
+    # 内部 ATTR_TO_PREDICATE 映射产生的系统词
+    "has_role", "has_title", "has_department", "org_type",
+    "sub_org_of", "indicates", "in_group", "disease_category",
+    "published_year", "volume", "issue",
+    "cohort_condition", "cohort_size",
+    "duration_value", "duration_unit", "duration_type",
+    # metric 数值边
+    "has_value",
+}
+
+# LLM 自由发挥的常见谓词 → 受控词表
+PREDICATE_ALIASES: dict[str, str] = {
+    # 治疗/影响类 → evaluates
+    "treat": "evaluates", "treats": "evaluates", "treats": "evaluates",
+    "治疗": "evaluates", "affect": "evaluates", "affects": "evaluates",
+    "study": "evaluates", "studies": "evaluates",
+    # 工具/使用/管理类 → uses
+    "use": "uses", "uses": "uses", "utilize": "uses", "utilizes": "uses",
+    "develops": "uses", "operates": "uses", "operate": "uses",
+    "manage": "uses", "manages": "uses", "manage": "uses",
+    "stores in": "part_of", "stores as": "part_of",
+    "split into": "part_of", "denote": "part_of", "enable": "uses",
+    "target": "uses", "targets": "uses",
+    "indication": "uses",  # drug→disease 用 uses
+    # 隶属/包含类 → part_of
+    "social relations": "part_of", "has_role": "has_role",  # 已在 set
+    "contains": "part_of", "include": "part_of", "includes": "part_of",
+    "belong to": "part_of", "belongs to": "part_of",
+    # 引用/讨论类
+    "author of": "cites", "review": "discusses", "reviews": "discusses",
+    "survey": "discusses", "surveys": "discusses",
+    # 任职/发表类
+    "任职于": "affiliated_with", "affiliated_with": "affiliated_with",
+    "发表": "cites", "publishes": "cites", "published": "cites",
+}
+
+
+def _normalize_predicate(pred: str) -> tuple[str, bool]:
+    """归一化谓词。
+
+    Returns:
+        (归一化后谓词, 是否做了归一化/映射)
+        - 已在受控词表：原样返回, False
+        - 命中别名：返回映射后谓词, True
+        - 都不命中：原样返回, False（调用方应记录 warning）
+    """
+    if not pred:
+        return pred, False
+    if pred in CONTROLLED_PREDICATES:
+        return pred, False
+    if pred in PREDICATE_ALIASES:
+        return PREDICATE_ALIASES[pred], True
+    return pred, False
+
+
+def _relabel_citations(entities: dict[str, "Entity"]) -> int:
+    """把引用括号实体（如 [87, 120]）归到 reference 类。
+
+    Returns:
+        被归一化的实体数量
+    """
+    n = 0
+    for ent in entities.values():
+        if _is_citation_bracket(ent.label):
+            old_cls = ent.entity_class
+            ent.entity_class = "reference"
+            ent.properties["auto_classified"] = "citation_bracket"
+            ent.properties["original_class"] = old_cls
+            n += 1
+    return n
+
+
 def generate_triples(
     extractions: list[dict], entities: dict[str, Entity]
 ) -> list[Triple]:
@@ -221,7 +309,13 @@ def generate_triples(
         if cls == "relationship":
             head = attrs.get("head") or ""
             tail = attrs.get("tail") or ""
-            pred = attrs.get("relation_type") or "related_to"
+            raw_pred = attrs.get("relation_type") or "related_to"
+            pred, normalized = _normalize_predicate(raw_pred)
+            if normalized:
+                meta = {**meta, "predicate_normalized_from": raw_pred}
+            elif pred not in CONTROLLED_PREDICATES:
+                # 不在受控词表也未命中别名——记录 warning
+                meta = {**meta, "warning": f"uncontrolled_predicate:{pred}"}
             head_id = _find_entity_by_label(entities, head)
             tail_id = _find_entity_by_label(entities, tail)
             if head_id and tail_id:
@@ -411,7 +505,11 @@ def build_knowledge_graph(extractions: list[dict]) -> tuple[dict, str, str]:
         (json_dict, cypher_text, markdown_summary)
     """
     entities = normalize_entities(extractions)
+    # 把引用括号实体（如 [87, 120]）归到 reference 类
+    n_citations = _relabel_citations(entities)
     triples = generate_triples(extractions, entities)
+    if n_citations:
+        print(f"  [kg_builder] {n_citations} 个引用括号实体已归到 reference 类")
     return (
         export_json(entities, triples),
         export_cypher(entities, triples),

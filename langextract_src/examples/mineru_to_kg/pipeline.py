@@ -40,6 +40,20 @@ BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "output"
 DEFAULT_MINERU_OUTPUT = (BASE_DIR / "../../../mineru_mvp/output").resolve()
 
+# 模型分档：设计依据 docs/superpowers/plans/2026-06-01-langextract-quality-impl.md
+# 默认 flash 档（qwen3.6-flash，由用户指定）；extraction 任务无需 max。
+# 可通过 env LX_MODEL_TIER 切换。
+TIER_TO_MODEL: dict[str, str] = {
+    "max":   "qwen3.7-max",
+    "plus":  "qwen-plus",
+    "flash": "qwen3.6-flash",
+}
+DEFAULT_TIER = "flash"
+
+# lx.extract 强化参数
+EXTRACTION_PASSES = 2       # 多 pass 提高召回 + 让 LLM 二次校对
+MAX_CHAR_BUFFER = 8000      # 避免长文被切碎导致跨段实体丢失
+
 
 # --------------------------------------------------------------------------- #
 # 配置加载
@@ -59,16 +73,31 @@ def load_config() -> dict:
 
     api_key = os.getenv("QWEN_API_KEY", "").strip()
     api_base = os.getenv("QWEN_API_BASE", "").strip()
-    model_id = os.getenv("QWEN_LLM_MODEL", "").strip()
-    if not (api_key and api_base and model_id):
+    if not (api_key and api_base):
         raise RuntimeError(
-            "缺少 QWEN_API_KEY / QWEN_API_BASE / QWEN_LLM_MODEL，请配置 .env"
+            "缺少 QWEN_API_KEY / QWEN_API_BASE，请配置 .env"
         )
+
+    # 模型选择优先级：
+    # 1) QWEN_LLM_MODEL env 显式指定（向后兼容）
+    # 2) LX_MODEL_TIER env 映射到 TIER_TO_MODEL
+    explicit = os.getenv("QWEN_LLM_MODEL", "").strip()
+    if explicit:
+        model_id = explicit
+        tier = next((k for k, v in TIER_TO_MODEL.items() if v == explicit), "custom")
+    else:
+        tier = os.getenv("LX_MODEL_TIER", DEFAULT_TIER).lower()
+        if tier not in TIER_TO_MODEL:
+            raise RuntimeError(
+                f"LX_MODEL_TIER={tier} 不在 {list(TIER_TO_MODEL.keys())}"
+            )
+        model_id = TIER_TO_MODEL[tier]
 
     return {
         "api_key": api_key,
         "api_base": api_base,
         "model_id": model_id,
+        "tier": tier,
         "env_source": str(loaded_from) if loaded_from else None,
     }
 
@@ -84,7 +113,8 @@ def run_pipeline(mineru_output_dir: Path, output_dir: Path) -> None:
     print("MinerU → LangExtract 知识图谱抽取 Pipeline")
     print(f"MinerU 输出: {mineru_output_dir}")
     print(f"抽取结果输出: {output_dir}")
-    print(f"模型: {cfg['model_id']} @ {cfg['api_base']}")
+    print(f"模型: {cfg['model_id']} (tier={cfg['tier']}) @ {cfg['api_base']}")
+    print(f"extraction_passes={EXTRACTION_PASSES}, max_char_buffer={MAX_CHAR_BUFFER}")
     print(f"配置来源: {cfg['env_source']}")
     print("=" * 70)
 
@@ -134,6 +164,8 @@ def run_pipeline(mineru_output_dir: Path, output_dir: Path) -> None:
             config=model_config,
             use_schema_constraints=False,
             fence_output=True,
+            extraction_passes=EXTRACTION_PASSES,
+            max_char_buffer=MAX_CHAR_BUFFER,
         )
         # 单 Document 时返回单个对象，多 Document 返回 list
         results_list = results if isinstance(results, list) else [results]

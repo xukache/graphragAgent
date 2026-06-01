@@ -1,17 +1,14 @@
 """面向知识图谱构建的 Prompt 与 Examples 定义。
 
-设计依据：docs/mineru2langextract_handoff-v1.0.md 第 6 节。
+设计依据：
+- docs/mineru2langextract_handoff-v1.0.md（转换层）
+- docs/superpowers/plans/2026-06-01-langextract-quality-impl.md（质量改进）
 
-extraction_class 体系：
-- person: 人物（角色、头衔、所属机构）
-- organization: 机构（类型、上级机构）
-- disease: 疾病/症状
-- drug: 药物（剂量、频次、适应症）
-- metric: 数值指标（指标名、值、单位、方向、分组）
-- cohort: 研究队列（样本量、纳入标准）
-- duration: 时间周期
-- publication: 发表文献
-- relationship: 实体间关系
+v2 关键变化（2026-06-01）：
+- 开放 entity schema：LLM 根据文档内容决定 3-8 个适合的 class（不再硬编码 9 类）
+- 受控 relation 词表：10 个通用动词，强制从词表中选
+- extraction_text 必须是原文 substring（避免 FAILED to align 警告与编造）
+- 3 个跨领域 examples（财务/学术/医学），全部 substring 合规
 """
 
 from __future__ import annotations
@@ -20,153 +17,195 @@ import langextract as lx
 
 
 PROMPT = (
-    "从输入文本（可能包含正文、Markdown 表格、LaTeX 公式）中抽取结构化信息，用于构建知识图谱。"
-    "extraction_text 尽量使用原文片段。"
-    "\n\n"
-    "抽取类别："
-    "(1) person 人物（attributes 含 role 角色、title 头衔、affiliation 所属机构）；"
-    "(2) organization 机构（attributes 含 type 类型、department 部门、parent 上级机构）；"
-    "(3) disease 疾病/症状（attributes 含 category 类别）；"
-    "(4) drug 药物（attributes 含 dosage 剂量、unit 单位、frequency 频次、indication 适应症、group 组别）；"
-    "(5) metric 数值指标（attributes 含 metric_type 类型、metric_name 指标名、value 值、unit 单位、direction 方向、group 组别）；"
-    "(6) cohort 研究队列（attributes 含 size 样本量、unit 单位、age_criteria 年龄标准、condition 纳入条件）；"
-    "(7) duration 时间周期（attributes 含 value 值、unit 单位、type 类型）；"
-    "(8) publication 发表文献（attributes 含 type 类型、journal_name 期刊名、year 年份、volume 卷、issue 期）；"
-    "(9) relationship 实体间关系（attributes 含 head 头实体、tail 尾实体、relation_type 关系类型）。"
-    "\n\n"
-    "重要规则："
-    "- 表格中的每一个数值都要单独抽取为 metric，attributes 中标注所在行列的语义；"
-    "- 不要遗漏数值与单位；"
-    "- 实体间的隶属、发表、资助、研究等关系单独抽取为 relationship；"
-    "- 同一实体在不同位置出现多次，可以重复抽取，attributes 中可补充上下文。"
+    "阅读整段文本，根据内容决定 3-8 个适合本篇文档的 entity class "
+    "（中英文名皆可，列在每个 JSON 抽取组的 'class' 字段）。\n\n"
+    "对每个抽取项：\n"
+    "  - extraction_text 必须是原文 substring（逐字一致，不能改写、不能拼接、不能翻译）\n"
+    "  - 若文本中出现引用编号（如 [87, 120]），请归类为 'reference'\n\n"
+    "关系抽取必须从以下 10 个谓词中选取，不要自创新词：\n"
+    "  mentions / discusses / proposes / extends / evaluates / uses /\n"
+    "  affiliated_with / published_in / part_of / cites\n\n"
+    "对每个 relationship，extraction_text 应该是该关系在原文中最短的对应片段"
+    "（如 \"任职于\" 即可），attributes 里给出 head / tail / relation_type。"
 )
 
 
 def build_examples() -> list[lx.data.ExampleData]:
-    """构造抽取示例。LangExtract 强制要求至少 1 个示例。
+    """构造 3 个跨领域抽取示例。LangExtract 强制要求至少 1 个示例。
+
+    所有 extraction_text 严格 = text 的 substring（substring 合规才能让
+    LangExtract 的 auto-alignment 报 match_exact，从而消除 FAILED to align 警告）。
 
     示例覆盖：
-    - 正文实体（person / organization / disease / drug）
-    - 表格数值（metric，含行列上下文）
-    - 实体间关系（relationship）
-    - 时间与文献（duration / publication）
+    - 财务（净利润/季度/数值）
+    - 学术（作者/机构/论文 + 引用编号归 reference）
+    - 医学（药物/疾病/研究）
     """
     return [
+        # ---------- 示例 1：财务（财报 / 季度数值） ----------
         lx.data.ExampleData(
             text=(
-                "2022 年 5 月，北京协和医院心内科主任张伟教授发表了一项关于高血压的研究，"
-                "纳入 200 名患者，使用氨氯地平治疗 6 个月。\n\n"
-                "下表为各季度疗效指标：\n\n"
-                "| 季度 | 收缩压(mmHg) | 舒张压(mmHg) |\n"
-                "| --- | --- | --- |\n"
-                "| Q1 | 145 | 92 |\n"
-                "| Q4 | 130 | 82 |\n\n"
-                "该研究发表于《中华心血管病杂志》2023 年第 51 卷第 3 期。"
+                "2023 年 Q1，腾讯营业收入 1499.86 亿元人民币，同比增长 11%。"
+                "净利润 258.38 亿元，毛利率 45.5%。"
             ),
             extractions=[
-                # 人物
                 lx.data.Extraction(
-                    extraction_class="person",
-                    extraction_text="张伟",
+                    extraction_class="company",
+                    extraction_text="腾讯",
+                    attributes={"type": "互联网公司"},
+                ),
+                lx.data.Extraction(
+                    extraction_class="period",
+                    extraction_text="Q1",
+                    attributes={"year": "2023"},
+                ),
+                lx.data.Extraction(
+                    extraction_class="metric",
+                    extraction_text="1499.86",
                     attributes={
-                        "role": "心内科主任",
-                        "title": "教授",
-                        "affiliation": "北京协和医院",
+                        "metric_name": "营业收入",
+                        "value": "1499.86",
+                        "unit": "亿元人民币",
+                        "group": "2023 Q1",
                     },
                 ),
-                # 机构
                 lx.data.Extraction(
-                    extraction_class="organization",
+                    extraction_class="metric",
+                    extraction_text="258.38",
+                    attributes={
+                        "metric_name": "净利润",
+                        "value": "258.38",
+                        "unit": "亿元人民币",
+                        "group": "2023 Q1",
+                    },
+                ),
+                lx.data.Extraction(
+                    extraction_class="metric",
+                    extraction_text="45.5",
+                    attributes={
+                        "metric_name": "毛利率",
+                        "value": "45.5",
+                        "unit": "%",
+                        "group": "2023 Q1",
+                    },
+                ),
+                lx.data.Extraction(
+                    extraction_class="relationship",
+                    extraction_text="营业收入",
+                    attributes={
+                        "head": "腾讯",
+                        "tail": "营业收入",
+                        "relation_type": "mentions",
+                    },
+                ),
+            ],
+        ),
+        # ---------- 示例 2：学术（作者/机构/论文 + 引用编号归 reference） ----------
+        lx.data.ExampleData(
+            text=(
+                "Haoyu Han 现任职于 Michigan State University，"
+                "Yu Wang 任职于 University of Oregon。"
+                "他们的论文 [120] 调研了 GraphRAG 的方法。"
+            ),
+            extractions=[
+                lx.data.Extraction(
+                    extraction_class="author",
+                    extraction_text="Haoyu Han",
+                    attributes={"affiliation": "Michigan State University"},
+                ),
+                lx.data.Extraction(
+                    extraction_class="author",
+                    extraction_text="Yu Wang",
+                    attributes={"affiliation": "University of Oregon"},
+                ),
+                lx.data.Extraction(
+                    extraction_class="institution",
+                    extraction_text="Michigan State University",
+                    attributes={"type": "大学"},
+                ),
+                lx.data.Extraction(
+                    extraction_class="institution",
+                    extraction_text="University of Oregon",
+                    attributes={"type": "大学"},
+                ),
+                lx.data.Extraction(
+                    extraction_class="reference",
+                    extraction_text="[120]",
+                    attributes={"type": "citation"},
+                ),
+                lx.data.Extraction(
+                    extraction_class="relationship",
+                    extraction_text="任职于",
+                    attributes={
+                        "head": "Haoyu Han",
+                        "tail": "Michigan State University",
+                        "relation_type": "affiliated_with",
+                    },
+                ),
+                lx.data.Extraction(
+                    extraction_class="relationship",
+                    extraction_text="调研了",
+                    attributes={
+                        "head": "[120]",
+                        "tail": "GraphRAG",
+                        "relation_type": "discusses",
+                    },
+                ),
+            ],
+        ),
+        # ---------- 示例 3：医学（药物/疾病/治疗） ----------
+        lx.data.ExampleData(
+            text=(
+                "2022 年 5 月，张伟在北京协和医院使用氨氯地平治疗高血压患者。"
+                "研究纳入 200 名患者，随访 6 个月。"
+            ),
+            extractions=[
+                lx.data.Extraction(
+                    extraction_class="researcher",
+                    extraction_text="张伟",
+                    attributes={"affiliation": "北京协和医院"},
+                ),
+                lx.data.Extraction(
+                    extraction_class="institution",
                     extraction_text="北京协和医院",
-                    attributes={"type": "医院", "department": "心内科"},
+                    attributes={"type": "医院"},
                 ),
-                # 疾病
-                lx.data.Extraction(
-                    extraction_class="disease",
-                    extraction_text="高血压",
-                    attributes={"category": "心血管疾病"},
-                ),
-                # 药物
                 lx.data.Extraction(
                     extraction_class="drug",
                     extraction_text="氨氯地平",
                     attributes={"indication": "高血压"},
                 ),
-                # 队列
+                lx.data.Extraction(
+                    extraction_class="disease",
+                    extraction_text="高血压",
+                    attributes={"category": "心血管疾病"},
+                ),
                 lx.data.Extraction(
                     extraction_class="cohort",
                     extraction_text="200 名患者",
                     attributes={"size": "200", "unit": "patients"},
                 ),
-                # 时间
                 lx.data.Extraction(
                     extraction_class="duration",
                     extraction_text="6 个月",
-                    attributes={"value": "6", "unit": "months", "type": "治疗周期"},
+                    attributes={"value": "6", "unit": "months"},
                 ),
-                # 表格数值（每个单元格独立抽取为 metric）
-                lx.data.Extraction(
-                    extraction_class="metric",
-                    extraction_text="145",
-                    attributes={
-                        "metric_type": "生理指标",
-                        "metric_name": "收缩压",
-                        "value": "145",
-                        "unit": "mmHg",
-                        "group": "Q1",
-                    },
-                ),
-                lx.data.Extraction(
-                    extraction_class="metric",
-                    extraction_text="130",
-                    attributes={
-                        "metric_type": "生理指标",
-                        "metric_name": "收缩压",
-                        "value": "130",
-                        "unit": "mmHg",
-                        "group": "Q4",
-                    },
-                ),
-                lx.data.Extraction(
-                    extraction_class="metric",
-                    extraction_text="92",
-                    attributes={
-                        "metric_type": "生理指标",
-                        "metric_name": "舒张压",
-                        "value": "92",
-                        "unit": "mmHg",
-                        "group": "Q1",
-                    },
-                ),
-                # 文献
-                lx.data.Extraction(
-                    extraction_class="publication",
-                    extraction_text="《中华心血管病杂志》2023 年第 51 卷第 3 期",
-                    attributes={
-                        "type": "期刊",
-                        "journal_name": "中华心血管病杂志",
-                        "year": "2023",
-                        "volume": "51",
-                        "issue": "3",
-                    },
-                ),
-                # 关系
                 lx.data.Extraction(
                     extraction_class="relationship",
-                    extraction_text="张伟 任职于 北京协和医院",
+                    extraction_text="使用",
                     attributes={
                         "head": "张伟",
-                        "tail": "北京协和医院",
-                        "relation_type": "任职于",
+                        "tail": "氨氯地平",
+                        "relation_type": "uses",
                     },
                 ),
                 lx.data.Extraction(
                     extraction_class="relationship",
-                    extraction_text="氨氯地平 治疗 高血压",
+                    extraction_text="治疗",
                     attributes={
                         "head": "氨氯地平",
                         "tail": "高血压",
-                        "relation_type": "治疗",
+                        "relation_type": "evaluates",
                     },
                 ),
             ],
