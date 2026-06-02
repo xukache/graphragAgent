@@ -283,6 +283,18 @@ export async function deleteSession(sessionId: string): Promise<void> {
   await apiFetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
 }
 
+export async function patchSession(sessionId: string, body: { title?: string }): Promise<UiSession> {
+  const w = await apiFetch<SessionWire>(`/api/sessions/${sessionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+  return toUiSession(w);
+}
+
+export async function clearSessionMessages(sessionId: string): Promise<void> {
+  await apiFetch(`/api/sessions/${sessionId}/messages`, { method: 'DELETE' });
+}
+
 export async function listMessages(sessionId: string): Promise<UiMessage[]> {
   const w = await apiFetch<MessageListWire>(
     `/api/sessions/${sessionId}/messages?page=1&page_size=200`

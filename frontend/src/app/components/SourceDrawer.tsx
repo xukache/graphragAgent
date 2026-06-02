@@ -258,7 +258,9 @@ export function SourceDrawer({ source, pageText, documentName, onClose }: Source
           {source.entityId}
         </div>
       </div>
-      <style>{`
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         @keyframes drawerSlideIn {
           from { transform: translateX(100%); }
           to { transform: translateX(0); }
@@ -267,7 +269,9 @@ export function SourceDrawer({ source, pageText, documentName, onClose }: Source
           from { opacity: 0; }
           to { opacity: 1; }
         }
-      `}</style>
+      `,
+        }}
+      />
     </>
   );
 }

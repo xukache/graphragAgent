@@ -1,0 +1,194 @@
+@custom-variant dark (&:is(.dark *));
+
+/* -----------------------------------------------------------------------
+ * 清新主题：浅色为主，OKLCH 表达
+ * 关键前景/背景对比度满足 WCAG AA
+ * 设计依据：docs/frontend_design_specification-v1.0.md
+ * ----------------------------------------------------------------------- */
+
+:root {
+  /* 中性层 */
+  --bg:            oklch(0.99 0.003 240);
+  --surface:       oklch(0.97 0.004 240);
+  --surface-2:     oklch(0.95 0.005 240);
+  --border:        oklch(0.91 0.006 240);
+  --border-strong: oklch(0.85 0.008 240);
+
+  /* 文字 */
+  --text:          oklch(0.22 0.015 250);  /* ~14:1 on bg  → AAA */
+  --text-2:        oklch(0.42 0.012 250);  /* ~7:1  on bg  → AAA */
+  --text-3:        oklch(0.55 0.012 250);  /* ~4.6:1 on bg → AA  */
+  --text-inverse:  oklch(0.99 0.003 240);
+
+  /* 主蓝：on white ~5.4:1 AA；on primary text-inverse ~7:1 AAA */
+  --primary:        oklch(0.55 0.15 240);
+  --primary-hover:  oklch(0.50 0.16 240);
+  --primary-soft:   oklch(0.94 0.025 240);
+  --primary-fg:     oklch(0.99 0.003 240);
+
+  /* 语义色（柔和清新） */
+  --success:        oklch(0.60 0.13 155);
+  --success-soft:   oklch(0.94 0.030 155);
+  --warn:           oklch(0.70 0.14 70);
+  --warn-soft:      oklch(0.95 0.030 80);
+  --error:          oklch(0.58 0.18 25);
+  --error-soft:     oklch(0.95 0.025 25);
+
+  /* 阴影 / 遮罩 */
+  --shadow:         oklch(0.20 0.01 250 / 0.08);
+  --overlay:        oklch(0.20 0.01 250 / 0.35);
+
+  /* 排版（沿用 shadcn 命名） */
+  --font-size:           16px;
+  --font-weight-medium:  500;
+  --font-weight-normal:  400;
+  --radius:              0.5rem;
+  --radius-sm:           calc(var(--radius) - 4px);
+  --radius-md:           calc(var(--radius) - 2px);
+  --radius-lg:           var(--radius);
+
+  /* 兼容 shadcn 旧变量名（避免破坏 ui/* 组件） */
+  --background:              var(--bg);
+  --foreground:              var(--text);
+  --card:                    var(--surface);
+  --card-foreground:         var(--text);
+  --popover:                 var(--surface);
+  --popover-foreground:      var(--text);
+  --primary-foreground:      var(--primary-fg);
+  --secondary:               var(--surface-2);
+  --secondary-foreground:    var(--text);
+  --muted:                   var(--surface-2);
+  --muted-foreground:        var(--text-2);
+  --accent:                  var(--primary-soft);
+  --accent-foreground:       var(--primary);
+  --destructive:             var(--error);
+  --destructive-foreground:  var(--text-inverse);
+  --input:                   transparent;
+  --input-background:        var(--surface);
+  --switch-background:       var(--border);
+  --ring:                    var(--primary);
+  --sidebar:                 var(--surface);
+  --sidebar-foreground:      var(--text);
+  --sidebar-primary:         var(--primary);
+  --sidebar-primary-foreground: var(--primary-fg);
+  --sidebar-accent:          var(--surface-2);
+  --sidebar-accent-foreground: var(--text);
+  --sidebar-border:          var(--border);
+  --sidebar-ring:            var(--primary);
+}
+
+.dark {
+  /* 暗色作为可选主题（保留供将来切换，本期默认走浅色） */
+  --bg:            oklch(0.18 0.012 250);
+  --surface:       oklch(0.22 0.012 250);
+  --surface-2:     oklch(0.26 0.012 250);
+  --border:        oklch(0.32 0.012 250);
+  --border-strong: oklch(0.40 0.012 250);
+
+  --text:          oklch(0.95 0.005 240);
+  --text-2:        oklch(0.78 0.008 240);
+  --text-3:        oklch(0.62 0.010 240);
+  --text-inverse:  oklch(0.22 0.015 250);
+
+  --primary:        oklch(0.70 0.15 240);
+  --primary-hover:  oklch(0.75 0.15 240);
+  --primary-soft:   oklch(0.32 0.060 240);
+  --primary-fg:     oklch(0.15 0.015 250);
+
+  --success:        oklch(0.72 0.15 155);
+  --success-soft:   oklch(0.30 0.050 155);
+  --warn:           oklch(0.78 0.14 70);
+  --warn-soft:      oklch(0.30 0.050 80);
+  --error:          oklch(0.70 0.18 25);
+  --error-soft:     oklch(0.30 0.060 25);
+
+  --shadow:         oklch(0 0 0 / 0.30);
+  --overlay:        oklch(0 0 0 / 0.55);
+}
+
+@theme inline {
+  --color-background:           var(--bg);
+  --color-foreground:           var(--text);
+  --color-card:                 var(--surface);
+  --color-card-foreground:      var(--text);
+  --color-popover:              var(--surface);
+  --color-popover-foreground:   var(--text);
+  --color-primary:              var(--primary);
+  --color-primary-foreground:   var(--primary-fg);
+  --color-secondary:            var(--surface-2);
+  --color-secondary-foreground: var(--text);
+  --color-muted:                var(--surface-2);
+  --color-muted-foreground:     var(--text-2);
+  --color-accent:               var(--primary-soft);
+  --color-accent-foreground:    var(--primary);
+  --color-destructive:          var(--error);
+  --color-destructive-foreground: var(--text-inverse);
+  --color-border:               var(--border);
+  --color-input:                var(--input);
+  --color-input-background:     var(--input-background);
+  --color-switch-background:    var(--switch-background);
+  --color-ring:                 var(--ring);
+  --color-sidebar:              var(--sidebar);
+  --color-sidebar-foreground:   var(--sidebar-foreground);
+  --color-sidebar-primary:      var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent:       var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border:       var(--sidebar-border);
+  --color-sidebar-ring:         var(--sidebar-ring);
+  --radius-sm:                  var(--radius-sm);
+  --radius-md:                  var(--radius-md);
+  --radius-lg:                  var(--radius-lg);
+  --radius-xl:                  calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  html {
+    font-size: var(--font-size);
+  }
+
+  h1 {
+    font-size: var(--text-2xl);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+  h2 {
+    font-size: var(--text-xl);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+  h3 {
+    font-size: var(--text-lg);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+  h4 {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+  label {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+  button {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+  input {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-normal);
+    line-height: 1.5;
+  }
+}

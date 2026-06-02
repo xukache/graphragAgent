@@ -1,4 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { Toaster } from 'sonner';
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { ChatPanel } from './components/ChatPanel';
@@ -8,6 +10,7 @@ import { KGPanel } from './components/KGPanel';
 import { UploadOverlay } from './components/UploadOverlay';
 import { SourceDrawer } from './components/SourceDrawer';
 import { Document, Session, Message, KGData, KGNode, Source, DrawerSource } from './types';
+import { tokens } from './styles/tokens';
 import {
   listDocuments,
   uploadDocument,
@@ -19,11 +22,18 @@ import {
   listSessions,
   createSession,
   deleteSession as apiDeleteSession,
+  patchSession,
+  clearSessionMessages,
   listMessages,
   streamChat,
   getHealth,
   ApiError,
 } from './api';
+
+const KG_DEFAULT_PCT = 36;       // KG 面板默认占比（%），对应 1440 视口下 ≈ 520px
+const KG_MIN_PCT = 22;            // 最小占比（约 320px，避免挤破）
+const KG_MAX_PCT = 55;            // 最大占比（约 800px）
+const KG_DEFAULT_PX = 520;        // 首次加载的固定默认宽度
 
 interface IndexingState {
   parsing: StageStateType;
@@ -61,6 +71,7 @@ export default function App() {
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messagesBySession, setMessagesBySession] = useState<Record<string, Message[]>>({});
+  const [sessionLoading, setSessionLoading] = useState(false);
   const [kgByDoc, setKgByDoc] = useState<Record<string, KGData>>({});
   const [indexingStates, setIndexingStates] = useState<Record<string, IndexingState>>({});
   const [isStreaming, setIsStreaming] = useState(false);
@@ -182,13 +193,21 @@ export default function App() {
 
   /* ---------- 切换会话：拉历史消息 ---------- */
   useEffect(() => {
-    if (!activeSessionId || messagesBySession[activeSessionId] !== undefined) return;
+    if (!activeSessionId) return;
+    // 已有缓存则不重新拉
+    if (messagesBySession[activeSessionId] !== undefined) {
+      setSessionLoading(false);
+      return;
+    }
+    setSessionLoading(true);
     (async () => {
       try {
         const msgs = await listMessages(activeSessionId);
         setMessagesBySession((prev) => ({ ...prev, [activeSessionId]: msgs }));
       } catch {
         setMessagesBySession((prev) => ({ ...prev, [activeSessionId]: [] }));
+      } finally {
+        setSessionLoading(false);
       }
     })();
   }, [activeSessionId]);  // eslint-disable-line react-hooks/exhaustive-deps
@@ -412,6 +431,34 @@ export default function App() {
     [activeSessionId, selectedDocId, sessions]
   );
 
+  const handleRenameSession = useCallback(async (sessId: string, newTitle: string) => {
+    const trimmed = newTitle.trim();
+    if (!trimmed) return;
+    try {
+      const updated = await patchSession(sessId, { title: trimmed });
+      setSessions((prev) => prev.map((s) => (s.id === sessId ? updated : s)));
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : String(err);
+      alert(`重命名失败：${msg}`);
+    }
+  }, []);
+
+  const handleClearMessages = useCallback(async (sessId: string) => {
+    try {
+      await clearSessionMessages(sessId);
+      setMessagesBySession((prev) => ({ ...prev, [sessId]: [] }));
+      // 切回该会话的清空态
+      if (activeSessionId === sessId) {
+        setActiveSessionId(null);
+        // 重新触发 useEffect 拉空数组 → sessionLoading 走一次
+        setTimeout(() => setActiveSessionId(sessId), 0);
+      }
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : String(err);
+      alert(`清空失败：${msg}`);
+    }
+  }, [activeSessionId]);
+
   /* ---------- 操作：发送消息（流式） ---------- */
   const handleSendMessage = useCallback(
     async (text: string) => {
@@ -634,12 +681,12 @@ export default function App() {
       style={{
         width: '100%',
         height: '100%',
-        background: 'oklch(0.12 0.008 260)',
+        background: tokens.bg,
         display: 'flex',
         flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
         fontSize: 13,
-        color: 'oklch(0.92 0.005 260)',
+        color: tokens.text,
         overflow: 'hidden',
       }}
     >
@@ -649,10 +696,10 @@ export default function App() {
         <div
           style={{
             padding: '6px 16px',
-            background: 'oklch(0.22 0.04 25)',
-            color: 'oklch(0.85 0.1 25)',
+            background: tokens.errorSoft,
+            color: tokens.error,
             fontSize: 12,
-            borderBottom: '1px solid oklch(0.62 0.18 25 / 0.3)',
+            borderBottom: `1px solid ${tokens.error}`,
           }}
         >
           {bootError}
@@ -670,61 +717,105 @@ export default function App() {
           onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
         />
 
-        {/* Center panel */}
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            minWidth: 400,
-            overflow: 'hidden',
-            background: 'oklch(0.12 0.008 260)',
-            position: 'relative',
-          }}
+        <PanelGroup
+          direction="horizontal"
+          autoSaveId="graphrag-layout-v1"
+          style={{ flex: 1 }}
         >
-          {indexProgressProps ? (
-            <IndexProgress {...indexProgressProps} />
-          ) : (
-            <ChatPanel
-              document={selectedDoc}
-              sessions={sessions}
-              activeSessionId={activeSessionId}
-              messages={currentMessages}
-              isStreaming={isStreaming}
-              onSendMessage={handleSendMessage}
-              onNewSession={handleNewSession}
-              onSelectSession={(id) => { setActiveSessionId(id); setFocusEntityIds([]); }}
-              onDeleteSession={handleDeleteSession}
-              onRetry={handleRetry}
-              onSourceClick={handleSourceClick}
-            />
-          )}
-          {selectedDocId && (
-            <SourceDrawer
-              source={drawerSource}
-              pageText={
-                drawerSource
-                  ? pageTextByDoc[selectedDocId]?.[drawerSource.pageId] ?? ''
-                  : ''
-              }
-              documentName={selectedDoc?.name ?? ''}
-              onClose={() => setDrawerSource(null)}
-            />
-          )}
-        </div>
+          {/* Center: Chat + IndexProgress + Drawer */}
+          <Panel
+            defaultSize={100 - KG_DEFAULT_PCT}
+            minSize={40}
+            id="center"
+            order={1}
+            style={{ display: 'flex', flexDirection: 'column', minWidth: 400, position: 'relative', background: tokens.bg }}
+          >
+            {indexProgressProps ? (
+              <IndexProgress {...indexProgressProps} />
+            ) : (
+              <ChatPanel
+                document={selectedDoc}
+                sessions={sessions}
+                activeSessionId={activeSessionId}
+                messages={currentMessages}
+                isStreaming={isStreaming}
+                sessionLoading={sessionLoading}
+                onSendMessage={handleSendMessage}
+                onNewSession={handleNewSession}
+                onSelectSession={(id) => { setActiveSessionId(id); setFocusEntityIds([]); }}
+                onDeleteSession={handleDeleteSession}
+                onRenameSession={handleRenameSession}
+                onClearMessages={handleClearMessages}
+                onRetry={handleRetry}
+                onSourceClick={handleSourceClick}
+              />
+            )}
+            {selectedDocId && (
+              <SourceDrawer
+                source={drawerSource}
+                pageText={
+                  drawerSource
+                    ? pageTextByDoc[selectedDocId]?.[drawerSource.pageId] ?? ''
+                    : ''
+                }
+                documentName={selectedDoc?.name ?? ''}
+                onClose={() => setDrawerSource(null)}
+              />
+            )}
+          </Panel>
 
-        <KGPanel
-          data={currentKg}
-          highlightedIds={highlightedIds}
-          focusIds={focusEntityIds}
-          collapsed={kgCollapsed}
-          onToggleCollapse={() => setKgCollapsed((v) => !v)}
-        />
+          <PanelResizeHandle
+            style={{
+              width: 4,
+              background: 'transparent',
+              cursor: 'col-resize',
+              transition: 'background 150ms',
+            }}
+            className="kg-resize-handle"
+          />
+
+          {/* Right: KG */}
+          <Panel
+            defaultSize={KG_DEFAULT_PCT}
+            minSize={KG_MIN_PCT}
+            maxSize={KG_MAX_PCT}
+            id="kg"
+            order={2}
+            style={{ display: 'flex', flexDirection: 'column', minWidth: 320, background: tokens.surface }}
+          >
+            <KGPanel
+              data={currentKg}
+              highlightedIds={highlightedIds}
+              focusIds={focusEntityIds}
+              collapsed={kgCollapsed}
+              onToggleCollapse={() => setKgCollapsed((v) => !v)}
+            />
+          </Panel>
+        </PanelGroup>
       </div>
 
       {showUpload && (
         <UploadOverlay onClose={() => setShowUpload(false)} onUpload={handleUpload} />
       )}
+
+      <Toaster
+        position="bottom-center"
+        richColors
+        closeButton
+        toastOptions={{
+          style: {
+            background: tokens.surface,
+            color: tokens.text,
+            border: `1px solid ${tokens.border}`,
+          },
+        }}
+      />
+
+      <style>{`
+        .kg-resize-handle:hover, .kg-resize-handle[data-resize-handle-active] {
+          background: ${tokens.primary} !important;
+        }
+      `}</style>
     </div>
   );
 }
