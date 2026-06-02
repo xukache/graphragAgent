@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2",
     "fastapi>=0.110",
     "uvicorn>=0.30",
+    "pandas>=3.0.3",
 ]
 
 [tool.uv]

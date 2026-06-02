@@ -37,6 +37,9 @@ def get_llm(temperature: float = 0.0) -> ChatOpenAI:
         temperature=temperature,
         timeout=60,
         max_retries=2,
+        # 开启流式：让 LangGraph 的 stream_mode="messages" 能逐 token 输出。
+        # 不影响 .invoke()（同步调用仍返回完整 message），只是额外支持流式消费。
+        streaming=True,
     )
 
 
