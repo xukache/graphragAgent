@@ -160,15 +160,35 @@ class MineruClient:
         """下载结果 zip，带重试。
 
         MinerU 结果 CDN（*.openxlab.org.cn）为国内域名，若本机走了代理可能
-        出现 SSL EOF。因此重试时回退到「绕过代理」直连。
+        出现 SSL EOF，或 SOCKS 代理触发 "Missing dependencies for SOCKS support"。
+        因此重试时回退到「绕过代理」直连。
+
+        注意：requests 的 `proxies=` 参数只覆盖 http/https，不覆盖环境变量里的
+        SOCKS `all_proxy`。要彻底绕过，必须在进程环境层面清掉代理变量，并对
+        session 显式设置 trust_env=False。
         """
+        import os as _os
+
         last_exc: Exception | None = None
         for attempt in range(1, max_retries + 1):
-            # 第 1 次按系统代理；后续尝试绕过代理直连
-            proxies = None if attempt == 1 else {"http": None, "https": None}
-            mode = "系统代理" if attempt == 1 else "绕过代理直连"
+            use_proxy = attempt == 1
+            mode = "系统代理" if use_proxy else "绕过代理直连"
+
+            # 后续尝试：临时清空代理环境变量 + trust_env=False，彻底绕过 SOCKS
+            saved_env: dict[str, str] = {}
+            proxy_keys = ("ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy",
+                          "HTTPS_PROXY", "https_proxy")
             try:
-                resp = requests.get(zip_url, timeout=300, proxies=proxies)
+                if not use_proxy:
+                    for k in proxy_keys:
+                        if k in _os.environ:
+                            saved_env[k] = _os.environ.pop(k)
+
+                session = requests.Session()
+                if not use_proxy:
+                    session.trust_env = False  # 不读环境里的代理配置
+                    session.proxies = {}
+                resp = session.get(zip_url, timeout=300)
                 resp.raise_for_status()
                 if attempt > 1:
                     print(f"      （第 {attempt} 次尝试，{mode} 成功）")
@@ -177,6 +197,10 @@ class MineruClient:
                 last_exc = exc
                 print(f"      下载失败（第 {attempt}/{max_retries} 次，{mode}）: {type(exc).__name__}")
                 time.sleep(2 * attempt)
+            finally:
+                # 恢复环境变量，避免影响进程内其它请求
+                for k, v in saved_env.items():
+                    _os.environ[k] = v
         raise RuntimeError(f"结果下载失败，已重试 {max_retries} 次") from last_exc
 
     @classmethod
